@@ -1,0 +1,116 @@
+---
+output: html_document
+---
+<!---
+I'll admit it, delineating a watershed is something that ArcGIS makes pretty easy.  This is something that is not 100% straightforward with open source GIS software.  So, I will try to remedy that by running through how to do it today using R and the open source GIS software 'SAGA-GIS'.  Special thanks to Matt Chernos for working through the modules with me.  He has some really interesting stuff on his blog [here](https://mattchernos.wordpress.com/).  Saga-gis is an open source GIS program that is intended for geoscientific analyses.  For windows, it can be downloaded [on sourceforge](http://sourceforge.net/projects/saga-gis/).  For Ubuntu, you can get it on the Ubuntu software centre, and if you are on a different type of linux, I am guessing you can figure out yourself how to install it with ```apt-get```.  OSX is the tricky one.  The only example I have seen requires you to use ```homebrew```, and is detailed [here](http://www.nickrobison.com/2013/07/03/compile-saga-for-mac-os-x/).  I will say that I have not actually tried this, so no guarantees on the OSX version
+
+When you install saga, you get a gui interface and a command line program.  The gui is quite useful for viewing and trying things out, but I am only going to focus on the interaction with R today.  There is a nice R package called ```RSAGA``` that allows you to run the saga command line through R.  Once you have loaded RSAGA, you need to set up the rsaga environment variable with ```rsaga.env```.  This allows the interaction between the command line program and R.  You may be able to get away with not doing this, but I prefer to set the variables explicitly so I know that it is finding everything properly.  Note that if you are in windows, you might not need to specify the ```modules``` location.  ```path``` will just be the folder where the saga_cmd executable is located.  You can get the version number when you open the saga gui.  
+
+```{r, message=F, warning = F}
+# necessary packages
+library(RSAGA)
+library(magrittr)
+library(raster)
+library(maptools)
+library(rgeos)
+
+# set up the environment
+#myenv = rsaga.env(workspace = getwd(), path = '/usr/bin', modules = '/usr/lib/x86_64-linux-gnu/saga', version = '2.1.4')
+myenv = rsaga.env(workspace = getwd(), path = '/usr/bin', modules = '/usr/lib/saga', version = '2.1.1')
+```
+
+To delineate a watershed, you'll need a DEM, and you'll need to know the base point of the watershed (usually a gauge location).  I have a DEM of the sea to sky area of BC, mostly focused around the Squamish river, that I am going to use as an example today.  I'll delineate the watershed of the Elaho river.  This DEM is saved as a .sgrd file, which is SAGA's raster format, which it uses for most things.  The .sgrd file will always be accompanied by .sdat and .mgrd files.  It is very simple to import a GeoTiff or ArcGIS ascii file into an .sgrd using SAGA (through the gui or command line).  The first thing I am going to do is fill the sinks of the DEM, to enable easier calculations of catchment area.  Keep in mind, that I am not actually reading anything into R here, just making a new file within my working folder.
+
+```{r, cache=T, message = F, warning = F, results = 'hide'}
+rsaga.fill.sinks('southcoastdem.sgrd', 'southcoastdemfilled.sgrd', method = "xxl.wang.liu.2006", env = myenv)
+```
+
+The next step is to create a catchment area grid from the dem.  If you are using an older version of Saga, ```rsaga.parallel.processing()``` will probably need to be subsituted for ```rsaga.topdown.processing()```.
+
+```{r, cache = T, results = 'hide', warning = F}
+rsaga.topdown.processing('southcoastdemfilled.sgrd', out.carea = 'catchment_area.sgrd')
+```
+
+Now lets work with the base point (usually a gauge).  Based on [this link](https://wateroffice.ec.gc.ca/report/report_e.html?type=realTime&stn=08GA071) from the water survey of Canada, I know that the Elaho gauge is located at 50.119 degrees North and 123.436 West (aka -123.436).  I am going to make that into a spatial point, then project it to BC albers using the ```sp``` package (which is a dependency of ```RSAGA``` and ```raster``` so it should already be loaded).
+
+```{r, cache = T}
+# make the base data frame, x is longitude and y is latitude
+elaho_gauge <- data.frame(y = 50.1194, x = -123.4361)
+
+# turn into a spatial object
+coordinates(elaho_gauge) <- ~ x + y
+
+# assign the coordinate system (WGS84)
+projection(elaho_gauge) <- CRS("+init=epsg:4326")
+
+# reproject to BC Albers
+elaho_gauge <- spTransform(elaho_gauge, CRS("+init=epsg:3005"))
+```
+
+
+Now I'll plot it on the DEM so I know its in the right place.
+```{r, eval = F}
+# plot it on the dem so I know it worked using the raster package
+fill_dem <- raster('southcoastdemfilled.sdat')
+projection(fill_dem) <- CRS("+init=epsg:3005")
+plot(fill_dem)
+plot(elaho_gauge, add=T)
+```
+
+
+--->
+See part 1 [here](http://www.headwateranalytics.com/blog/delineate-a-watershed-with-saga-gis-and-r4).  Everything looks good on the map from part 1, so I think I have the basepoint correct.  The next thing you have to deal with is snapping the basepoint to the largest catchment area cell.  If the gauge point is off by even one grid cell from what the DEM and catchment area grids consider the stream channel, things will not work properly.  So, often the gauge location has to be adjusted a few cells in different directions, especially in a braided river such as the Elaho.  There are a number of ways to do this, I am going to use the ```raster``` package to do it.  This might end up being an iterative process, since too large of a buffer might delineate the wrong watershed, especially if your gauge is located near a stream confluence.
+
+```{r, cache = T}
+# read in the catchment area grid
+catch_area <- raster('catchment_area.sdat')
+
+# extract a window around around the gauge point, I am going to get the maximum value within 500 m of the gauge
+buffer <- extract(catch_area, elaho_gauge, buffer = 500, cellnumbers = T)[[1]] %>%
+  as.data.frame
+
+# this is the location of the maximum catchment area on the grid, given as the id from the raster
+snap_loc <- buffer$cell[which.max(buffer$value)]
+
+# get the xy coordinates at that max location, which is now going to be the location of the gauge.
+snap_loc <- xyFromCell(catch_area, snap_loc)
+```
+
+Now is when you use that snapped point and your filled DEM to compute the upslope area.  
+
+```{r, cache = T, results = 'hide', warning = F}
+rsaga.geoprocessor(lib = 'ta_hydrology', 4,
+		param = list(TARGET_PT_X = snap_loc[1,1],
+			  				 TARGET_PT_Y = snap_loc[1,2],
+				  			 ELEVATION = 'southcoastdemfilled.sgrd',
+					  		 AREA = 'elaho.sgrd',
+						  	 METHOD = 0))
+
+```
+
+The ```rsaga.geoprocessor()``` function called a SAGA module to delineate the watershed, but it is still in the form of an .sgrd, with the areas of the grid inside the watershed equal to 100, and areas outside equal to 0.  The last thing that you'll likely need to do is turn this .sgrd into a polygon, which is again done in the ```rsaga.geoprocessor()```.  You can run every module available in the SAGA gui through the ```rsaga.geoprocessor()```.  Check out ```?rsaga.get.libraries``` followed by ```?rsaga.get.modules``` for a specific library, and finally ```?rsaga.get.usage``` for a specific module in a library to see how I know the formatting needed to run these modules through the geoprocessor.
+
+```{r, cache = T, results = 'hide', warning = F}
+rsaga.geoprocessor(lib = 'shapes_grid', 6,
+		param = list(GRID = 'elaho.sgrd',
+		             POLYGONS = 'elaho_boundary.shp',
+		             CLASS_ALL = 0,
+		             CLASS_ID = 100,
+		             SPLIT = 0))
+
+```
+
+Once the grid is vectorized, you can read it into R as a spatial polygons data frame, and plot it to see if it looks correct.  If you are not getting what you want, the first troubleshooting step is probably to play around with the buffer size in the ```extract()``` function used above.  This looks like I expected the basin to look, so I am satisfied!
+
+```{r, cache = T, eval = F}
+# read in the shapefile, I explicitly noted the projection.  This may not be necessary.
+basin <- readShapeSpatial('elaho_boundary.shp', proj4string = CRS("+init=epsg:3005"))
+
+# plot it onto the DEM
+plot(fill_dem)
+plot(basin, add = T) 
+```
+
+
+
+
