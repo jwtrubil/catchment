@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+sourcedata/
+output/
+*.shp
+*.dbf
+*.mshp
+*.shx
+*.prj
+scratch/
