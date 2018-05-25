@@ -1,10 +1,12 @@
 #catchment function
+library(RSAGA)
+library(raster)
 library(tidyverse)
+#saga environment, in windows it seems to be able to find it automatically
+#saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
+#                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
 
-#saga environment
-saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
-                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
-
+saga.env <- rsaga.env()
 #rsaga.get.libraries(path = saga.env$modules)
 #rsaga.get.modules('io_grid', env = saga.env)o
 
@@ -79,13 +81,23 @@ catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, sag
   snap_loc <- xyFromCell(catch_area, snap_loc)
   
   #make watershed as grid
-  rsaga.geoprocessor(lib = 'ta_hydrology', 4,
-  		param = list(TARGET_PT_X = snap_loc[1,1],
-  			  				 TARGET_PT_Y = snap_loc[1,2],
-  				  			 ELEVATION = './scratch/demfilled.sgrd',
-  					  		 AREA = './scratch/bounds.sgrd',
-  						  	 METHOD = 0),
-  		env = saga.env)
+  if (fillsinks == T){
+    rsaga.geoprocessor(lib = 'ta_hydrology', 4,
+    		param = list(TARGET_PT_X = snap_loc[1,1],
+    			  				 TARGET_PT_Y = snap_loc[1,2],
+    				  			 ELEVATION = './scratch/demfilled.sgrd',
+    					  		 AREA = './scratch/bounds.sgrd',
+    						  	 METHOD = 0),
+    		env = saga.env)
+  } else {
+    rsaga.geoprocessor(lib = 'ta_hydrology', 4,
+                       param = list(TARGET_PT_X = snap_loc[1,1],
+                                    TARGET_PT_Y = snap_loc[1,2],
+                                    ELEVATION = './scratch/dem.sgrd',
+                                    AREA = './scratch/bounds.sgrd',
+                                    METHOD = 0),
+                       env = saga.env)
+  }
   
   #convert shape to grid
   rsaga.geoprocessor(lib = 'shapes_grid', 6,
@@ -103,15 +115,16 @@ catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, sag
   
   if (.Platform$OS.type == 'unix'){
     system('rm -r scratch/')
-  } else {
-    system('rmdir /s /q scratch')
-  } 
-  
+   } else {
+     system('del /f /s /q scratch 1')
+     system('rmdir /s /q scratch')
+   } 
+   
   return(basin)
   
 }
 
-basin <- catchment(dem, lat, long, pourpointsbuffer, crs, outname, fillsinks = F, saga.env = saga.env)
+basin <- catchment(dem, lat, long, pourpointsbuffer, crs, outname, fillsinks = T, saga.env = saga.env)
 
 plot(dem)
 plot(basin, add = T) 
