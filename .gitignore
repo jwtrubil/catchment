@@ -2,7 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
-sourcedata/
 output/
 *.shp
 *.dbf

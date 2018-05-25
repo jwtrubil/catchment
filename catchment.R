@@ -1,7 +1,13 @@
-#catchment function
+# code to illustrate application of the 'catchment' function
+#
+# 2018-May-24 Joel Trubilowicz and Dan Moore
+#######################################################################################
+
 library(RSAGA)
 library(raster)
 library(tidyverse)
+library(ros)
+
 #saga environment, in windows it seems to be able to find it automatically
 #saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
 #                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
@@ -11,19 +17,41 @@ saga.env <- rsaga.env()
 #rsaga.get.modules('io_grid', env = saga.env)o
 
 
-
+# input digital elevation model as a raster 
 dem <- raster('./sourcedata/southcoastdem.sdat')
 
+# coordinates of the catchment outlet
 lat = 50.1194
 long = -123.4361
-crs = 3005 #bc albers
-pourpointsbuffer = 500 #m
+
+# coordinate reference system - in this case, BC Albers
+crs = 3005 
+
+# buffer around catchment outlet to find location on digital stream network
+pourpointsbuffer = 500 # units = m
+
+# should sinks be filled
 fillsinks = T
+
+# name of output file
 outname = 'elaho'
 
-#need to add Roxygen skeleton
-catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, saga.env = rsaga.env()){
-  
+# 
+#' Delineate a watershed
+#'
+#' @param dem Raster object of your dem.
+#' @param lat A number.  Latitude of outlet in decimal degrees.
+#' @param long A number. Longitude of outlet in decimal degrees.
+#' @param buffsize A number, the buffer (m) around catchment outlet to find location on digital stream network.
+#' @param crs A number.  The EPSG coordinate system number for the DEM and the output.
+#' @param outname Character.  The name for the output shapefile.
+#' @param fillsinks Boolean, default is TRUE, using the Fill Sinks XXL method.
+#' @param saga.env Saga environment object.  Default is to let saga find it on its own.
+#' @return A SpatialPolygonsDataFrame and a shapefile in yjr working directory.
+#' @export
+catchment <- function(dem, lat, long, 
+                      buffsize, crs, 
+                      outname, fillsinks = T, saga.env = rsaga.env()){
   library(RSAGA)
   library(raster)
   library(rgdal)
@@ -34,17 +62,15 @@ catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, sag
   #make a temporary directory 
   system('mkdir scratch')
   
-  
   #put the dem object in there
   writeRaster(dem,"./scratch/dem.sdat",format="SAGA",NAflag=-9999, overwrite=T)
   
   #if you don't need to fill sinks, you can save a fair bit of processing time
-  if(fillsinks == T){
-    #fill sinks
+  if (fillsinks == T) {     #fill sinks
     rsaga.fill.sinks("./scratch/dem.sgrd", './scratch/demfilled.sgrd', method = "xxl.wang.liu.2006", env = saga.env)
     #calculate catchment area grid from filled dem
     rsaga.topdown.processing('./scratch/demfilled.sgrd', out.carea = './scratch/catchment_area.sgrd', env = saga.env)
-  } else{
+  } else {
     #calculate catchment area grid direct from dem
     rsaga.topdown.processing("./scratch/dem.sgrd", out.carea = './scratch/catchment_area.sgrd', env = saga.env)
   }
@@ -72,7 +98,7 @@ catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, sag
   
   # extract a window around around the gauge point, I am going to get the maximum value within 500 m of the gauge
   buffer <- raster::extract(catch_area, gauge, buffer = pourpointsbuffer, cellnumbers = T)[[1]] %>%
-    as.data.frame
+            as.data.frame
   
   # this is the location of the maximum catchment area on the grid, given as the id from the raster
   snap_loc <- buffer$cell[which.max(buffer$value)]
@@ -108,23 +134,21 @@ catchment <- function(dem, lat, long, buffsize, crs, outname, fillsinks = T, sag
   		             SPLIT = 0),
   		env = saga.env)
   
-  #return a spatialpolygonsdataframe
-  # plot it onto the DEM
+  #return a spatialpolygonsdataframe and plot it onto the DEM
   basin <- readOGR('.', outname)
   projection(basin) <- CRS(crs)
   
-  if (.Platform$OS.type == 'unix'){
+  if (.Platform$OS.type == 'unix') {
     system('rm -r scratch/')
    } else {
      system('del /f /s /q scratch 1')
      system('rmdir /s /q scratch')
    } 
-   
   return(basin)
-  
 }
 
-basin <- catchment(dem, lat, long, pourpointsbuffer, crs, outname, fillsinks = T, saga.env = saga.env)
+basin <- catchment(dem, lat, long, pourpointsbuffer, crs, 
+                   outname, fillsinks = T, saga.env = saga.env)
 
 plot(dem)
 plot(basin, add = T) 

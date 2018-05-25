@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SAGA_METADATA>
+  <HISTORY>
+    <MODULE>Merging</MODULE>
+    <OPTION type="choice" id="TYPE" name="Preferred data storage type">7</OPTION>
+    <OPTION type="choice" id="INTERPOL" name="Interpolation">4</OPTION>
+    <OPTION type="choice" id="OVERLAP" name="Overlapping Cells">0</OPTION>
+    <DATA_LIST type="grid_list" id="GRIDS" name="Grids to Merge">
+      <DATA>
+        <FILE>E:\SAMM-DEM\all-sgrd-grids\demthin92GA.sgrd</FILE>
+      </DATA>
+      <DATA>
+        <FILE>E:\SAMM-DEM\all-sgrd-grids\demthin92GB.sgrd</FILE>
+      </DATA>
+      <DATA>
+        <FILE>E:\SAMM-DEM\all-sgrd-grids\demthin92JC.sgrd</FILE>
+      </DATA>
+      <DATA>
+        <FILE>E:\SAMM-DEM\all-sgrd-grids\demthin92JD.sgrd</FILE>
+      </DATA>
+    </DATA_LIST>
+    <GRID_OPERATION NAME="Resampling">25.000000 -&gt; 25.000000</GRID_OPERATION>
+  </HISTORY>
+  <SOURCE>
+    <FILE>/media/29A16C9069FA9FC1/Dropbox/Joel-Documents/headwater/blog_posts/delineate_watershed/southcoastdem.sgrd</FILE>
+    <DATABASE></DATABASE>
+    <PROJECTION></PROJECTION>
+  </SOURCE>
+  <DESCRIPTION></DESCRIPTION>
+</SAGA_METADATA>
