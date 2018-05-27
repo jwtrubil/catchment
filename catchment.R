@@ -6,13 +6,12 @@
 library(RSAGA)
 library(raster)
 library(tidyverse)
-library(ros)
 
 #saga environment, in windows it seems to be able to find it automatically
-#saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
-#                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
+saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
+                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
 
-saga.env <- rsaga.env()
+#saga.env <- rsaga.env()
 #rsaga.get.libraries(path = saga.env$modules)
 #rsaga.get.modules('io_grid', env = saga.env)o
 
@@ -44,14 +43,23 @@ outname = 'elaho'
 #' @param long A number. Longitude of outlet in decimal degrees.
 #' @param buffsize A number, the buffer (m) around catchment outlet to find location on digital stream network.
 #' @param crs A number.  The EPSG coordinate system number for the DEM and the output.
-#' @param outname Character.  The name for the output shapefile.
-#' @param fillsinks Boolean, default is TRUE, using the Fill Sinks XXL method.
+#' @param outname A character string.  The name for the output shapefile.
+#' @param fillsinks Boolean.  Should sinks be filled?  Default is TRUE.
+#' @param sinkmethod A character string. SAGA method for sink filling, options are "planchon.darboux.2001", "wang.liu.2006", or "xxl.wang.liu.2006" (default).
+#' @param minslope A number.  Minimum slope angle preserved during sink filling, default is 0.01.
 #' @param saga.env Saga environment object.  Default is to let saga find it on its own.
-#' @return A SpatialPolygonsDataFrame and a shapefile in yjr working directory.
+#' @return SpatialPolygonsDataFrame and a shapefile in working directory.
 #' @export
-catchment <- function(dem, lat, long, 
-                      buffsize, crs, 
-                      outname, fillsinks = T, saga.env = rsaga.env()){
+catchment <- function(dem, 
+                      lat, 
+                      long, 
+                      buffsize = 100, 
+                      crs, 
+                      outname, 
+                      fillsinks = T,
+                      sinkmethod = 'xxl.wang.liu.2006',
+                      minslope = 0.01,
+                      saga.env = rsaga.env()){
   library(RSAGA)
   library(raster)
   library(rgdal)
@@ -67,12 +75,19 @@ catchment <- function(dem, lat, long,
   
   #if you don't need to fill sinks, you can save a fair bit of processing time
   if (fillsinks == T) {     #fill sinks
-    rsaga.fill.sinks("./scratch/dem.sgrd", './scratch/demfilled.sgrd', method = "xxl.wang.liu.2006", env = saga.env)
+    rsaga.fill.sinks("./scratch/dem.sgrd", './scratch/demfilled.sgrd', 
+                     method = sinkmethod,
+                     minslope = minslope,
+                     env = saga.env)
     #calculate catchment area grid from filled dem
-    rsaga.topdown.processing('./scratch/demfilled.sgrd', out.carea = './scratch/catchment_area.sgrd', env = saga.env)
+    rsaga.topdown.processing('./scratch/demfilled.sgrd', 
+                             out.carea = './scratch/catchment_area.sgrd', 
+                             env = saga.env)
   } else {
     #calculate catchment area grid direct from dem
-    rsaga.topdown.processing("./scratch/dem.sgrd", out.carea = './scratch/catchment_area.sgrd', env = saga.env)
+    rsaga.topdown.processing("./scratch/dem.sgrd", 
+                             out.carea = './scratch/catchment_area.sgrd', 
+                             env = saga.env)
   }
   
   # make the base data frame, x is longitude and y is latitude
@@ -148,7 +163,8 @@ catchment <- function(dem, lat, long,
 }
 
 basin <- catchment(dem, lat, long, pourpointsbuffer, crs, 
-                   outname, fillsinks = T, saga.env = saga.env)
+                   outname, fillsinks = T, sinkmethod = 'planchon.darboux.2001', 
+                   minslope = 0.01, saga.env = saga.env)
 
 plot(dem)
 plot(basin, add = T) 
