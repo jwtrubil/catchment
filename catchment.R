@@ -3,38 +3,12 @@
 # 2018-May-24 Joel Trubilowicz and Dan Moore
 #######################################################################################
 
+
 library(RSAGA)
 library(raster)
+library(rgdal)
 library(tidyverse)
-
-#saga environment, in windows it seems to be able to find it automatically
-saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
-                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
-
-#saga.env <- rsaga.env()
-#rsaga.get.libraries(path = saga.env$modules)
-#rsaga.get.modules('io_grid', env = saga.env)o
-
-
-# input digital elevation model as a raster 
-dem <- raster('./sourcedata/southcoastdem.sdat')
-
-# coordinates of the catchment outlet
-lat = 50.1194
-long = -123.4361
-
-# coordinate reference system - in this case, BC Albers
-crs = 3005 
-
-# buffer around catchment outlet to find location on digital stream network
-pourpointsbuffer = 500 # units = m
-
-# should sinks be filled
-fillsinks = T
-
-# name of output file
-outname = 'elaho'
-
+library(ggmap)
 # 
 #' Delineate a watershed
 #'
@@ -64,8 +38,6 @@ catchment <- function(dem,
   library(raster)
   library(rgdal)
   
-  #make crs string
-  crs <- paste0("+init=epsg:", crs)
   
   #make a temporary directory 
   system('mkdir scratch')
@@ -96,24 +68,20 @@ catchment <- function(dem,
   # turn into a spatial object
   coordinates(gauge) <- ~ x + y
   
+  #make crs string
+  crs <- paste0("+init=epsg:", crs)
+  
   # assign the coordinate system (WGS84)
   projection(gauge) <- CRS("+init=epsg:4326")
   
-  # reproject to BC Albers
+  # reproject to specified CRS
   gauge <- spTransform(gauge, CRS(crs))
-  
-  # # plot it on the dem so I know it worked using the raster package
-  # dem <- raster('./sourcedata/southcoastdem.sdat')
-  # projection(dem) <- CRS("+init=epsg:3005")
-  # plot(dem)
-  # plot(gauge, add=T)
   
   # read in the catchment area grid
   catch_area <- raster('./scratch/catchment_area.sdat')
   
-  # extract a window around around the gauge point, I am going to get the maximum value within 500 m of the gauge
-  buffer <- raster::extract(catch_area, gauge, buffer = pourpointsbuffer, cellnumbers = T)[[1]] %>%
-            as.data.frame
+  # extract a window around around the gauge point
+  buffer <- as.data.frame(raster::extract(catch_area, gauge, buffer = pourpointsbuffer, cellnumbers = T)[[1]]) 
   
   # this is the location of the maximum catchment area on the grid, given as the id from the raster
   snap_loc <- buffer$cell[which.max(buffer$value)]
@@ -149,22 +117,69 @@ catchment <- function(dem,
   		             SPLIT = 0),
   		env = saga.env)
   
-  #return a spatialpolygonsdataframe and plot it onto the DEM
+  #return a spatialpolygonsdataframe 
   basin <- readOGR('.', outname)
   projection(basin) <- CRS(crs)
   
   if (.Platform$OS.type == 'unix') {
     system('rm -r scratch/')
    } else {
-     system('del /f /s /q scratch 1')
-     system('rmdir /s /q scratch')
+     system('rmdir /s /q "scratch\"')
    } 
   return(basin)
 }
 
-basin <- catchment(dem, lat, long, pourpointsbuffer, crs, 
-                   outname, fillsinks = T, sinkmethod = 'planchon.darboux.2001', 
+#saga environment, in windows it seems to be able to find it automatically
+saga.env <- rsaga.env(path = "/Applications/QGIS.app/Contents/MacOS/bin", 
+                   modules = "/Applications/QGIS.app/Contents/MacOS/lib/saga")
+
+# input digital elevation model as a raster 
+dem <- raster('./sourcedata/southcoastdem.sdat')
+
+# coordinates of the catchment outlet
+lat = 50.1194
+long = -123.4361
+
+# coordinate reference system - in this case, BC Albers
+crs <- 3005 
+
+# buffer around catchment outlet to find location on digital stream network
+pourpointsbuffer <- 500 # units = m
+
+# should sinks be filled
+fillsinks <- T
+
+# name of output file
+outname <- 'elaho'
+
+elaho <- catchment(dem, lat, long, pourpointsbuffer, crs, 
+                   outname, fillsinks = T, 
                    minslope = 0.01, saga.env = saga.env)
 
-plot(dem)
-plot(basin, add = T) 
+
+#basin map
+bdf <- elaho %>% spTransform(., CRS("+init=epsg:4326")) %>% fortify
+
+map <- get_map(location = c(lon = -123.25, lat = 50.3), zoom = 9, maptype = 'terrain')
+
+ggmap(map) +
+  geom_polygon(data = bdf, aes(x = long, y = lat), color = '#fc4e2a', fill = '#fc4e2a', alpha = 0.5) +
+  geom_point(aes(x=lat, y = long), data = NULL) +
+  labs(x = NULL, y = NULL) +
+  ggtitle('08GA071 - Elaho River near the mouth'
+  )
+ggsave('elaho_map.png', height = 10, width=10, dpi = 200)
+
+#pour point map
+map2 <- get_map(location = c(lon = -123.4, lat = 50.1), zoom = 11, maptype = 'terrain')
+ppt <- tibble(x = long, y = lat, lab = 'WSC gauge')
+
+ggmap(map2) +
+  ggtitle('Elaho - Squamish Junction') +
+  geom_point(aes(x = x, y = y), color = 'yellow', size = 4, data = ppt) +
+  geom_text(aes(x = x, y = y, label = lab), data = ppt, nudge_y = 0.005, nudge_x = 0.03) +
+  labs(x = NULL, y = NULL)
+ggsave('elaho_gauge.png', height = 10, width=10, dpi = 200)
+
+
+
